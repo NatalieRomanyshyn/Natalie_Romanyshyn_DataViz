@@ -1,0 +1,350 @@
+---
+title: "Assignement 1"
+author: "Natalie_Romanyshyn"
+date: "February 24, 2018"
+output: 
+  html_document:
+      keep_md: true
+---
+
+```{r,  message = FALSE, warning = FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+##Task 1. 
+
+```{r}
+library(readr)
+library(reshape2)
+library(dplyr)
+
+df1 <- read_csv(
+  "C:/Personal/71099942/Documents/GitHub/Data_Viz_course_materials/course_materials/Exercises/03_olympics/athletes_and_events.csv", col_names = T)
+
+df2 <- read_csv(
+  "C:/Personal/71099942/Documents/GitHub/Data_Viz_course_materials/course_materials/Exercises/03_olympics/gdp_pop.csv", col_names = T)
+
+df3 <- read_csv(
+  "C:/Personal/71099942/Documents/GitHub/Data_Viz_course_materials/course_materials/Exercises/03_olympics/noc_regions.csv", col_names = T)
+
+```
+
+###a. a.Combine the information in the three spreadsheets 
+
+```{r}
+
+df1$area <- ifelse(df1$NOC == "GDR" 
+                   | df1$NOC == "FRG", 
+                   "GER", df1$NOC)
+
+df1$area <- ifelse(df1$area == "URS",
+                   "RUS", df1$area)
+
+df1$area <- ifelse(df1$area == "YUG",
+                   "SRB", df1$area)
+
+
+df <- merge(df1, df2, by.x = "area", by.y = "Code", all.x = F, all.y = T)
+
+df <- merge(df, df3, by.x = "NOC", by.y = "NOC", all.x = F, all.y = T)
+df$medal_rank <- ifelse(df$Medal == "Bronze", 1, df$Medal)
+df$medal_rank <- ifelse(df$medal_rank == "Silver", 2, df$medal_rank)
+df$medal_rank <- ifelse(df$medal_rank == "Gold", 3, df$medal_rank)
+df$medal_any <- ifelse(is.na(df$Medal), 0, 1)
+
+```
+
+###b.Calculate a summary of how many summer games each country competed in, and how many medals of each type the country won
+
+```{r}
+
+summer_country <- df %>% 
+  group_by(region, Season) %>% 
+  summarise(
+    count_medals = sum(medal_any, na.rm = TRUE)
+  ) %>% 
+  filter(Season == "Summer") %>%
+  arrange(desc(count_medals))
+
+summer_medals <- df %>% 
+  group_by(region, Season, Medal) %>% 
+  summarise(
+    count_medals = sum(medal_any, na.rm = TRUE)
+  ) %>% 
+  filter(Season == "Summer", !is.na(Medal))
+
+head(summer_medals)
+```
+
+###c. data set for the viz - comparision over time
+
+```{r}
+
+summer_gold_super_powers <- df %>% 
+  group_by(region, Season, Year, Medal) %>% 
+  summarise(
+    count_medals = sum(medal_any, na.rm = TRUE),
+    count_athlets = n()
+  ) %>% 
+  filter(Season == "Summer", Medal == "Gold",
+         region == "USA"
+         | region == "Russia"
+         | region == "China")
+
+library(ggplot2)
+library(ggthemes)
+
+g1 <- ggplot(summer_gold_super_powers, aes(x = Year, y = count_medals)) +
+ geom_line(aes(color = region)) + 
+  geom_point(aes(color = region), size=3) + 
+  theme_tufte(base_size = 15) + theme(axis.title=element_blank()) +
+   labs(title = "Gold Medals in Summer Olympics", 
+       subtitle = "Total Count by Region*", 
+       caption = "*Russia represented by the USSR before 1991")
+
+#  + geom_hline(yintercept = c(5,6), lty=2) + 
+#  scale_y_continuous(breaks=seq(1, 6, 1), 
+#                    label=sprintf("$%s",seq(300,400,20))) + 
+# scale_x_continuous(breaks=x,label=x) +
+#  annotate("text", x = c(2012), y = c(10), 
+#           adj=1, family="serif", label = c(
+#          "Gold Medals / in Summer Olympics"))
+
+g1
+
+```
+
+```{r}
+
+summer_medals$Medal <- factor(summer_medals$Medal, levels = c("Bronze", "Silver", "Gold"))
+
+summer_medals %>%
+  filter(region == "USA"
+         | region == "Russia"
+         | region == "China") %>% 
+  arrange(Medal) %>%
+ggplot(aes(x = region, y = count_medals, fill = Medal)) +
+ geom_bar(stat = "identity") +
+  scale_fill_manual("Medal", values = c("Gold" = "gold", "Silver" = "grey", "Bronze" = "tan3")) + 
+  theme_tufte(base_size = 15) + theme(axis.title=element_blank()) +
+  ggtitle("Total Amount of Medals in Summer Olympics")
+
+
+```
+
+The main focus of the plots was to compare the amount of medals the three world super-power have acquired in the summer Olympics. I would recommed using the first plot with the gold medal count overtime because it allows to add historical context so that the readers can learn relevant pieces of history that impacted participation and the amount of medals earned. For example, it becomes clear from the plot that China has not started participating in the summer games until 1984 which gives a great way to insert history facts into the story. 
+
+##Task 2. Medal Counts adjusted by Population, GDP
+
+```{r}
+
+gold_super_powers <- df %>% 
+  filter(Year >= 2000) %>%
+  group_by(region, Season, Medal) %>% 
+  summarise(
+    count_medals = sum(medal_any, na.rm = TRUE),
+    count_athlets = n()
+  ) %>% 
+  filter(Medal == "Gold",
+         region == "USA"
+         | region == "Russia"
+         | region == "China")
+
+df4 <- df[ , c(20, 18, 19)]
+
+gold_super_powers <- merge(gold_super_powers, df4, 
+                                        by.x = "region", by.y = "region", 
+                                        all.x = T, all.y = F)
+
+gold_super_powers <- gold_super_powers[!duplicated(gold_super_powers), ]
+gold_super_powers <- gold_super_powers[complete.cases(gold_super_powers), ]
+gold_super_powers <- gold_super_powers[c(-2, -4), ]
+
+
+gold_super_powers$pop.adg <- gold_super_powers$count_medals/gold_super_powers$Population
+gold_super_powers$gdp.adg <- gold_super_powers$`GDP per Capita` / gold_super_powers$count_medals
+
+gold_super_powers <- rename(gold_super_powers, GDP_per_capita = "GDP per Capita")
+
+ggplot(gold_super_powers, aes(fill=Season, y=count_medals, x=region)) + 
+    geom_bar(stat="identity") + 
+  theme_tufte(base_size = 15) + theme(axis.title=element_blank()) + 
+  labs(title = "USA gets by far the most Olympic gold...", 
+       subtitle = "Total Count of Gold medals since 2000")
+
+
+```
+
+```{r}
+ggplot(gold_super_powers, aes(fill=Season, y=pop.adg, x=region)) + 
+    geom_bar(stat="identity") + 
+  theme_tufte(base_size = 15) + theme(axis.title=element_blank()) + 
+  labs(title = "but Russia's population is slightly more athletically talented", 
+       subtitle = "...mostly due to Winter Olympic advantage ",
+         caption = "Olympic gold medals per capita")
+```
+
+```{r}
+library(ggrepel)
+
+superpowers <- ggplot(gold_super_powers, aes(x = GDP_per_capita, y = count_medals, color = Season)) +
+  geom_point(size = 6) + 
+  geom_text_repel(aes(label = region),
+              color = "gray20", size = 4, force = 10, check_overlap = T, nudge_x = 35, nudge_y = 35) +
+theme_tufte(base_size = 15) + theme(axis.title=element_blank()) + 
+  labs(title = "Superpowers with higher GDP per capita win more gold medals... \n but only for the Summer Olympics", 
+       subtitle = "Olympic gold medals and GDP per capita")
+
+superpowers
+
+```
+
+
+##Task 3. Host country advanatge 
+
+```{r}
+library(rvest)
+library(stringr)
+wiki_hosts <- read_html("https://en.wikipedia.org/wiki/Summer_Olympic_Games")
+hosts <- html_table(html_nodes(wiki_hosts, "table")[[8]], fill=TRUE)
+hosts <- hosts[-1,1:3]
+hosts$city <- str_split_fixed(hosts$Host, n=2, ",")[,1]
+hosts$country <- str_split_fixed(hosts$Host, n=2, ",")[,2]
+
+hosts <- hosts[hosts$Year > 1944 & hosts$Year < 2020, ]
+hosts$country <- ifelse(hosts$country == " Soviet Union", "Russia", hosts$country)
+hosts$country <- ifelse(hosts$country == " West Germany", "Germany", hosts$country)
+hosts$country <- trimws(hosts$country, which = c("both", "left", "right"))
+
+
+adv <- df %>% 
+  filter(Season == "Summer", Year > 1944 & Year < 2020) %>%
+  group_by(region, Season, Year, City, Medal) %>% 
+  summarise(
+    count_medals = sum(medal_any, na.rm = TRUE),
+  ) %>% 
+  filter(Season == "Summer", !is.na(Medal))
+
+adv$region <- ifelse(adv$region == "UK", "United Kingdom", adv$region)
+adv$region <- ifelse(adv$region == "USA", "United States", adv$region)
+
+countries <- hosts$country
+
+adv <- adv[adv$region %in% countries, ]
+
+adv$City <- ifelse(adv$City == "Athina", "Athens", adv$City)
+adv$City <- ifelse(adv$City == "Moskva", "Moscow", adv$City)
+adv$City <- ifelse(adv$City == "Roma", "Rome", adv$City)
+
+
+adv <- merge(adv, hosts[ , c("city", "country")], by.x = "City", by.y = "city", all.x = T, all.y = F)
+
+adv$host <- ifelse(adv$region == adv$country, "Host Advantage", "No Advantage")
+
+adv <- adv[complete.cases(adv), ]
+
+adv1 <- adv %>% 
+  group_by(host, region) %>%
+  summarise(
+    avg_medals = mean(count_medals, na.rm = T)
+  )
+
+adv1$avg_medals <- round(adv1$avg_medals, digits = 1)
+
+adv1 %>% arrange(host, host, desc(avg_medals))
+
+adv1$region <- factor(adv1$region, levels = rev(unique(adv1$region)))
+
+host_adv <- ggplot(adv1, aes(fill= host, x = region , y =  avg_medals)) + 
+    geom_bar(position="dodge", stat="identity") + 
+  coord_flip() +
+  theme_tufte(base_size = 15) + theme(axis.title=element_blank()) + 
+  labs(title = "Host advantage is real!", 
+       subtitle = "Average medals won in Summer Olympics since 1944")
+
+host_adv
+
+```
+
+
+```{r}
+athlets <- df %>%
+  group_by(ID, Name, Sex, region, Sport) %>%
+  summarise(
+    medals = sum(medal_any)
+    ) %>% 
+  arrange(
+    desc(medals)
+  ) %>%
+  filter(
+    medals > 11
+  )
+
+athlets$Name <- factor(athlets$Name, levels = (rev(unique(athlets$Name))))
+  
+plot_athlets <- ggplot(athlets, aes(x = medals, y = Name, color = Sex, shape = Sport)) +
+  geom_point(size = 4) + 
+theme_tufte(base_size = 15) + theme(axis.title=element_blank()) + 
+  labs(title = "Most successful \nOlympic athletes of all time",
+       subtitle = "Total medal count"
+       )
+
+plot_athlets
+
+
+```
+
+##5. Data Table
+
+```{r}
+athlets1 <- df %>%
+  group_by(ID, Name, Sex, region, Sport) %>%
+  summarise(
+    medals = sum(medal_any)
+    ) %>% 
+  arrange(
+    desc(medals)
+  ) %>%
+  filter(
+    medals > 0
+  )
+
+library(DT)
+
+datatable(athlets1)
+
+pretty_headers <- 
+  gsub("[.]", " ", colnames(athlets1)) %>%
+  str_to_title()
+
+athlets1 %>%
+  datatable(
+    rownames = FALSE,
+    colnames = pretty_headers,
+    filter = list(position = "top"),
+    options = list(language = list(sSearch = "Filter:"))
+  )
+
+```
+
+In order to continue on the subject of the superpowers in the Olympic games, i would like to provide the list of the most successful athlets and the countries they represented to allow the users to see to what extent these countreis are represented by the superpowers, as well as the gender of the athlets and the sport they participated in. 
+
+##6. Interactive plots
+
+```{r}
+library(plotly)
+
+ggplotly(superpowers + theme(legend.title = element_blank()))
+
+
+```
+The interactive plots are useful to provide a reader with additional tools to explore and single out different dimensions data. This may be especially beneficial when there is a lot of data in a graph, such that interactive legened, for example, can provide a way to compare different categories and spot patterns. 
+
+```{r}
+ggplotly(host_adv)
+```
+
+
+
